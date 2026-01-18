@@ -70,7 +70,7 @@ This cell will receive updates whenever another client sends an update with the 
 
 **Option B: SYNC Formula**
 ```excel
-=SYNC("revenue_q1", A1)
+=WB_SYNC("revenue_q1", A1)
 ```
 
 This both tracks cell A1 for outbound sync AND receives inbound updates.

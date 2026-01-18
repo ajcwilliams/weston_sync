@@ -14,8 +14,8 @@ namespace ExcelSyncAddin
     public class SyncUdf
     {
         /// <summary>
-        /// SYNC formula: Bidirectional cell synchronization.
-        /// Usage: =SYNC("myKey", A1)
+        /// WB_SYNC formula: Bidirectional cell synchronization.
+        /// Usage: =WB_SYNC("myKey", A1)
         ///
         /// When A1 changes, Excel recalculates this formula, which sends the new value.
         /// When another client sends an update, RTD triggers recalc and this returns the new value.
@@ -23,7 +23,7 @@ namespace ExcelSyncAddin
         /// <param name="key">Unique sync key</param>
         /// <param name="sourceValue">The value to sync (reference another cell)</param>
         /// <returns>The synced value (remote if available, else local)</returns>
-        public object Sync(string key, object sourceValue)
+        public object WB_SYNC(string key, object sourceValue)
         {
             try
             {
