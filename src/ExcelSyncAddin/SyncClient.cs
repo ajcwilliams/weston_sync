@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -16,6 +17,11 @@ namespace ExcelSyncAddin
         private bool _isDisposed;
         private CancellationTokenSource _reconnectCts;
         private static SyncClient _instance;
+
+        // Debounce: track last sent values to avoid duplicate sends
+        private readonly ConcurrentDictionary<string, string> _lastSentValues = new ConcurrentDictionary<string, string>();
+        private readonly ConcurrentDictionary<string, DateTime> _lastSentTimes = new ConcurrentDictionary<string, DateTime>();
+        private const int DebounceMs = 100; // Minimum ms between sends for same key
 
         /// <summary>
         /// Singleton instance.
@@ -204,6 +210,35 @@ namespace ExcelSyncAddin
         /// </summary>
         public void SendUpdate(string key, string value)
         {
+            Task.Run(() => SendUpdateAsync(key, value));
+        }
+
+        /// <summary>
+        /// Send update with debouncing - skips if same value was just sent.
+        /// Used by SYNC formula to avoid spamming during Excel recalculation.
+        /// </summary>
+        public void SendUpdateDebounced(string key, string value)
+        {
+            // Skip if same value was already sent
+            if (_lastSentValues.TryGetValue(key, out var lastValue) && lastValue == value)
+            {
+                return;
+            }
+
+            // Skip if sent too recently (debounce)
+            if (_lastSentTimes.TryGetValue(key, out var lastTime))
+            {
+                if ((DateTime.UtcNow - lastTime).TotalMilliseconds < DebounceMs)
+                {
+                    return;
+                }
+            }
+
+            // Update tracking
+            _lastSentValues[key] = value;
+            _lastSentTimes[key] = DateTime.UtcNow;
+
+            // Send async
             Task.Run(() => SendUpdateAsync(key, value));
         }
 

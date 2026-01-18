@@ -14,42 +14,33 @@ namespace ExcelSyncAddin
     public class SyncUdf
     {
         /// <summary>
-        /// SYNC formula: Registers a cell for synchronization.
+        /// SYNC formula: Bidirectional cell synchronization.
         /// Usage: =SYNC("myKey", A1)
+        ///
+        /// When A1 changes, Excel recalculates this formula, which sends the new value.
+        /// When another client sends an update, RTD triggers recalc and this returns the new value.
         /// </summary>
         /// <param name="key">Unique sync key</param>
         /// <param name="sourceValue">The value to sync (reference another cell)</param>
-        /// <returns>The synced value</returns>
+        /// <returns>The synced value (remote if available, else local)</returns>
         public object Sync(string key, object sourceValue)
         {
             try
             {
-                // Get calling cell info
-                var app = (Application)ExcelDnaUtil.Application;
-                var caller = app.Caller as Range;
+                var localValue = sourceValue?.ToString() ?? "";
 
-                if (caller != null)
-                {
-                    var workbook = (Workbook)caller.Worksheet.Parent;
-                    var worksheet = caller.Worksheet;
+                // Send local value to server (debounced to avoid spam during recalc)
+                SyncClient.Instance?.SendUpdateDebounced(key, localValue);
 
-                    // Register this cell for tracking
-                    CellTracker.Instance.TrackCell(
-                        key,
-                        workbook.Name,
-                        worksheet.Name,
-                        caller.Address[false, false]
-                    );
-                }
-
-                // Check if we have a remote value
+                // Check if we have a remote value from another client
                 var remoteValue = RtdServer.Instance?.GetValue(key);
-                if (remoteValue != null)
+
+                // Return remote value if it exists and differs, else local
+                if (remoteValue != null && remoteValue.ToString() != localValue)
                 {
                     return remoteValue;
                 }
 
-                // Return the source value
                 return sourceValue ?? "";
             }
             catch (Exception ex)
