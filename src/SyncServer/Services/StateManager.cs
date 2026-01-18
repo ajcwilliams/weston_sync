@@ -4,62 +4,95 @@ using SyncServer.Models;
 namespace SyncServer.Services;
 
 /// <summary>
-/// Thread-safe in-memory storage for cell state.
-/// Provides current values for late-joining clients.
+/// Thread-safe storage for cell state.
+/// Uses in-memory cache for fast reads, PostgreSQL for persistence.
 /// </summary>
 public class StateManager
 {
-    private readonly ConcurrentDictionary<string, CellState> _state = new();
+    private readonly ConcurrentDictionary<string, CellState> _cache = new();
+    private readonly DatabaseService _db;
+    private readonly ILogger<StateManager> _logger;
+
+    public StateManager(DatabaseService db, ILogger<StateManager> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Load all state from database into cache.
+    /// </summary>
+    public async Task LoadFromDatabaseAsync()
+    {
+        var states = await _db.GetAllStatesAsync();
+        foreach (var state in states)
+        {
+            _cache[state.Key] = state;
+        }
+        _logger.LogInformation("Loaded {Count} cell states from database", states.Count);
+    }
 
     /// <summary>
     /// Update or add a cell's state.
     /// </summary>
-    public void SetValue(string key, string value, string? updatedBy = null)
+    public async Task SetValueAsync(string key, string value, string? updatedBy = null)
     {
-        _state.AddOrUpdate(
-            key,
-            _ => new CellState
+        var state = new CellState
+        {
+            Key = key,
+            Value = value,
+            LastUpdatedBy = updatedBy,
+            LastUpdated = DateTime.UtcNow
+        };
+
+        // Update cache immediately
+        _cache[key] = state;
+
+        // Persist to database (fire and forget for speed, but log errors)
+        _ = Task.Run(async () =>
+        {
+            try
             {
-                Key = key,
-                Value = value,
-                LastUpdatedBy = updatedBy,
-                LastUpdated = DateTime.UtcNow
-            },
-            (_, existing) =>
+                await _db.SetValueAsync(key, value, updatedBy);
+            }
+            catch (Exception ex)
             {
-                existing.Value = value;
-                existing.LastUpdatedBy = updatedBy;
-                existing.LastUpdated = DateTime.UtcNow;
-                return existing;
-            });
+                _logger.LogError(ex, "Failed to persist value for key {Key}", key);
+            }
+        });
     }
 
     /// <summary>
-    /// Get a cell's current value.
+    /// Get a cell's current value from cache.
     /// </summary>
     public CellState? GetValue(string key)
     {
-        return _state.TryGetValue(key, out var state) ? state : null;
+        return _cache.TryGetValue(key, out var state) ? state : null;
     }
 
     /// <summary>
-    /// Get all current cell states.
+    /// Get all current cell states from cache.
     /// </summary>
     public IEnumerable<CellState> GetAllStates()
     {
-        return _state.Values.ToList();
+        return _cache.Values.ToList();
     }
 
     /// <summary>
     /// Remove a cell from tracking.
     /// </summary>
-    public bool Remove(string key)
+    public async Task<bool> RemoveAsync(string key)
     {
-        return _state.TryRemove(key, out _);
+        var removed = _cache.TryRemove(key, out _);
+        if (removed)
+        {
+            await _db.DeleteAsync(key);
+        }
+        return removed;
     }
 
     /// <summary>
     /// Get the number of tracked cells.
     /// </summary>
-    public int Count => _state.Count;
+    public int Count => _cache.Count;
 }

@@ -5,6 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<DatabaseService>();
 builder.Services.AddSingleton<StateManager>();
 
 // Configure CORS for Excel clients
@@ -19,6 +20,13 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Initialize database and load state
+var db = app.Services.GetRequiredService<DatabaseService>();
+var stateManager = app.Services.GetRequiredService<StateManager>();
+
+await db.InitializeAsync();
+await stateManager.LoadFromDatabaseAsync();
 
 app.UseCors();
 

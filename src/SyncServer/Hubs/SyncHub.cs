@@ -29,8 +29,8 @@ public class SyncHub : Hub
         _logger.LogInformation("Update received: {Key} = {Value} from {SenderId}",
             key, value, senderId);
 
-        // Store the current state
-        _stateManager.SetValue(key, value, senderId);
+        // Store the current state (persists to database)
+        await _stateManager.SetValueAsync(key, value, senderId);
 
         // Broadcast to all OTHER clients (exclude sender)
         await Clients.Others.SendAsync("ReceiveUpdate", new CellUpdate
